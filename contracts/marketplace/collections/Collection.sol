@@ -3,10 +3,10 @@ pragma solidity ^0.8.7;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "../../functools/VerifySigner.sol";
+import "contracts/functools/VerifySigner.sol";
 
 contract Collection is ERC721URIStorage, Ownable, VerifySigner {
-  uint256 public constant VERSION = 6;
+  uint256 public constant VERSION = 7;
 
   IGallery public gallery;
   address public signer;
@@ -92,7 +92,7 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     uint256 price,
     uint256 nonce,
     bytes memory signature
-  ) external payable returns (uint256) {
+  ) public payable returns (uint256) {
     verifySigner(_getMessageHash(address(gallery), tokenURI, currency, price, nonce), signature, signer);
     uint256 lastTokenId = _mintToken(tokenURI, address(gallery));
     uint256 lastListingId = _listingToken(
@@ -117,6 +117,20 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     }
 
     return lastListingId;
+  }
+
+  function mintManyWithFixedPrice(
+    string[] calldata tokenURI,
+    address[] calldata mintTo,
+    uint256[] calldata timeStart,
+    uint256[] calldata timeEnd,
+    address[] memory currency,
+    uint256[] calldata price
+  ) external onlyCreator {
+    for (uint256 i = 0; i < tokenURI.length; i++) 
+    {
+      mintWithFixedPriceCreator(tokenURI[i], mintTo[i], timeStart[i], timeEnd[i], currency[i], price[i]);
+    }
   }
 
   function mintWithAuction(
@@ -162,7 +176,7 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     uint256 timeEnd,
     address currency,
     uint256 price
-  ) external onlyCreator returns (uint256) {
+  ) public onlyCreator returns (uint256) {
     _mintToken(tokenURI, mintTo);
     return _listingToken(tokenURI, mintTo, IGallery.ListingType.FixedPrice, timeStart, timeEnd, currency, price, 0, 0);
   }
@@ -170,6 +184,7 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
   // OWNER FUNCTIONS
 
   function setCreator(address account, bool creator) external onlyOwner {
+    // require(creators[account] != creator, "Already in this status");
     creators[account] = creator;
     emit CreatorSet(account, creator);
   }
