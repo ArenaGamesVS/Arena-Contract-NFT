@@ -16,4 +16,8 @@ contract AdminContract is AccessControlEnumerableUpgradeable{
         _setupRole(ADMIN_ROLE, _msgSender());
         _setRoleAdmin(CREATOR_ROLE, ADMIN_ROLE);
     }
+
+    function isAdminContract() external pure returns (bool) {
+        return true;
+    }
 }

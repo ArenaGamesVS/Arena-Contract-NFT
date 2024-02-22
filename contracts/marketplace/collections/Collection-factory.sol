@@ -46,7 +46,7 @@ contract CollectionFactory {
   }
 
   function setAdminContract(address _adminContract) external onlyRole(ADMIN_ROLE) {
-    require(_adminContract != address(0), "Zero address!");
+    require(IAdminContract(_adminContract).isAdminContract(), "Wrong contract!");
     adminContract = _adminContract;
     emit AdminContractChanged(adminContract);
   }
