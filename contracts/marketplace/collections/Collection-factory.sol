@@ -8,6 +8,8 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 contract CollectionFactory {
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
   bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
+
+  mapping (bytes32 => string) public roles;
   address public adminContract;
 
   event CollectionCreated(address indexed collection, string slug);
@@ -21,7 +23,7 @@ contract CollectionFactory {
           "AccessControl: account ",
           Strings.toHexString(uint160(msg.sender), 20),
           " is missing role ",
-          Strings.toHexString(uint256(role), 32)
+          roles[role]
         )
       )
     );
@@ -30,6 +32,8 @@ contract CollectionFactory {
 
   constructor(address _adminContract) {
     adminContract = _adminContract;
+    roles[ADMIN_ROLE] = "ADMIN_ROLE";
+    roles[CREATOR_ROLE] = "CREATOR_ROLE";
   }
 
   // CREATOR FUNCTIONS

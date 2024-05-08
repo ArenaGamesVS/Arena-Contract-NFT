@@ -61,7 +61,7 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     uint256 nonce,
     bytes memory signature,
     address recipient
-  ) external returns (uint256) {
+  ) external payable returns (uint256) {
     verifySigner(_getMessageHash(address(gallery), tokenURI, currency, price, nonce), signature, signer);
     uint256 lastTokenId = _mintToken(tokenURI, address(gallery));
     uint256 lastListingId = _listingToken(
@@ -76,10 +76,15 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
       0
     );
 
-    IERC20(currency).transferFrom(recipient, address(this), price);
-    IERC20(currency).approve(address(gallery), price);
-    gallery.buy(lastListingId);
-    super._transfer(address(this), recipient, lastTokenId);
+    if (currency == address(0)) {
+      gallery.buyETH{value: msg.value}(lastListingId);
+      super._transfer(address(this), recipient, lastTokenId);
+    } else {
+      IERC20(currency).transferFrom(recipient, address(this), price);
+      IERC20(currency).approve(address(gallery), price);
+      gallery.buy(lastListingId);
+      super._transfer(address(this), recipient, lastTokenId);
+    }
 
     return lastListingId;
   }
@@ -127,8 +132,7 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     address[] memory currency,
     uint256[] calldata price
   ) external onlyCreator {
-    for (uint256 i = 0; i < tokenURI.length; i++) 
-    {
+    for (uint256 i = 0; i < tokenURI.length; i++) {
       mintWithFixedPriceCreator(tokenURI[i], mintTo[i], timeStart[i], timeEnd[i], currency[i], price[i]);
     }
   }
@@ -288,9 +292,5 @@ interface IGallery {
 interface IERC20 {
   function approve(address spender, uint256 amount) external returns (bool);
 
-  function transferFrom(
-    address from,
-    address to,
-    uint256 amount
-  ) external returns (bool);
+  function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
