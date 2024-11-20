@@ -6,6 +6,7 @@ import "../../interfaces/IAdminContract.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract CollectionFactory {
+  uint256 public constant VERSION = 8;
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
   bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
 
@@ -45,7 +46,7 @@ contract CollectionFactory {
     address signer_,
     address _gallery
   ) external onlyRole(CREATOR_ROLE) returns (address collection) {
-    collection = address(new Collection(msg.sender, name, symbol, slug_, signer_, _gallery));
+    collection = address(new Collection(msg.sender, name, symbol, slug_, signer_, _gallery, adminContract));
     emit CollectionCreated(collection, slug_);
   }
 

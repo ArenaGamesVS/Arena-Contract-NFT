@@ -2,14 +2,20 @@
 pragma solidity ^0.8.7;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "contracts/functools/VerifySigner.sol";
+import "../../interfaces/IAdminContract.sol";
 
-contract Collection is ERC721URIStorage, Ownable, VerifySigner {
-  uint256 public constant VERSION = 7;
+contract Collection is ERC2981, ERC721URIStorage, Ownable, VerifySigner {
+  uint256 public constant VERSION = 8;
+  bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+  RoyaltyInfo private _defaultRoyaltyInfo;
 
   IGallery public gallery;
   address public signer;
+  address public adminContract;
 
   mapping(address => bool) public creators;
 
@@ -31,16 +37,19 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     string memory symbol_,
     string memory slug_,
     address _signer,
-    address _gallery
+    address _gallery,
+    address _admin
   ) ERC721(name_, symbol_) Ownable() {
     gallery = IGallery(_gallery);
     transferOwnership(owner_);
     creators[owner_] = true;
     signer = _signer;
     _slug = slug_;
+    adminContract = _admin;
+    _setDefaultRoyalty(owner_, 500);
   }
 
-  // Publick functions
+  // Public functions
 
   function getMessageHash(
     address buyer,
@@ -202,6 +211,18 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
     gallery = IGallery(_gallery);
   }
 
+  function setDefaultRoyalty(address receiver, uint96 feeNumerator) external onlyAdmin(ADMIN_ROLE) {
+    _setDefaultRoyalty(receiver, feeNumerator);
+  }
+
+  function setTokenRoyalty(uint256 tokenId, address receiver, uint96 feeNumerator) external onlyAdmin(ADMIN_ROLE) {
+    _setTokenRoyalty(tokenId, receiver, feeNumerator);
+  }
+
+  function resetTokenRoyalty(uint256 tokenId) external onlyAdmin(ADMIN_ROLE) {
+    _resetTokenRoyalty(tokenId);
+  }
+
   // PRIVATE FUNCTIONS
 
   function _mintToken(string calldata tokenURI, address mintTo) private returns (uint256) {
@@ -242,6 +263,15 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
 
   // OVERRIDES
 
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, ERC2981)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+
   function slug() public view virtual returns (string memory) {
     return _slug;
   }
@@ -260,6 +290,20 @@ contract Collection is ERC721URIStorage, Ownable, VerifySigner {
 
   modifier onlyCreator() {
     require(creators[msg.sender], "Caller isn't a creator");
+    _;
+  }
+
+  modifier onlyAdmin(bytes32 role) {
+    require(
+      IAdminContract(adminContract).hasRole(role, msg.sender),
+      string(
+        abi.encodePacked(
+          "AccessControl: account ",
+          Strings.toHexString(uint160(msg.sender), 20),
+          " is missing role ADMIN_ROLE"
+        )
+      )
+    );
     _;
   }
 }

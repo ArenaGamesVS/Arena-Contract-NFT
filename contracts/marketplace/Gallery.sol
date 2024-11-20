@@ -8,14 +8,16 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 
+import "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import "../libraries/UniqueArray.sol";
 
 contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
   using SafeERC20Upgradeable for IERC20Upgradeable;
   using UniqueArray for address[];
 
-  uint256 public constant VERSION = 12;
+  uint256 public constant VERSION = 14;
 
   /// @dev The address that will receive a commission from sales
   address public feePlatformAddress;
@@ -83,6 +85,16 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
   );
 
   event ListingBought(uint256 indexed listingId, address indexed buyer);
+
+  event ListingBoughtFull(
+    uint256 indexed listingId,
+    address indexed buyer,
+    address paymentToken,
+    address collection,
+    address seller,
+    uint256 price,
+    uint256 tokenId
+  );
 
   event ListingBid(uint256 indexed listingId, address indexed bidder, uint256 amount, uint256 timeEnd);
 
@@ -181,7 +193,6 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
 
   function buy(uint256 listingId) external nonReentrant {
     listings[listingId].currency.safeTransferFrom(msg.sender, address(this), listings[listingId].minimalBid);
-
     _buy(listingId, msg.sender);
   }
 
@@ -198,11 +209,7 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
     _buy(listingId, msg.sender);
   }
 
-  function bidOnlyOwner(
-    uint256 listingId,
-    uint256 amount,
-    address recipient
-  ) external nonReentrant onlyCreator {
+  function bidOnlyOwner(uint256 listingId, uint256 amount, address recipient) external nonReentrant onlyCreator {
     uint256 totalBid = amount + listings[listingId].pendingAmounts[recipient];
     listings[listingId].pendingAmounts[recipient] = 0;
     listings[listingId].currency.safeTransferFrom(recipient, address(this), totalBid);
@@ -267,6 +274,10 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
     return bids[listingId][bidder];
   }
 
+  function getLastId() external view returns (uint256) {
+    return _lastListingId;
+  }
+
   // OWNER FUNCTIONS
 
   function setCollectionCreator(address account, bool creator) external onlyOwner {
@@ -286,7 +297,7 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
 
   /// @param _feePlatformAddress Explain to an end user what this does
   function setFeePlatformAddress(address _feePlatformAddress) external onlyOwner {
-    // require(_feePlatformAddress != address(0), "Invalid fee platform address");
+    require(_feePlatformAddress != address(0), "Fee platform address can't be zero address");
     feePlatformAddress = _feePlatformAddress;
 
     emit FeePlatformAddressSet(feePlatformAddress);
@@ -391,11 +402,7 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
     return _lastListingId;
   }
 
-  function _bid(
-    uint256 listingId,
-    uint256 amount,
-    address recipient
-  ) private {
+  function _bid(uint256 listingId, uint256 amount, address recipient) private {
     require(listings[listingId].listingType == ListingType.Auction, "Bids only for auctions");
     require(block.timestamp >= listings[listingId].timeStart, "Sale not yet started");
     require(block.timestamp < listings[listingId].timeEnd, "Sale has finished");
@@ -457,22 +464,36 @@ contract Gallery is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
     listings[listingId].collection.transferFrom(address(this), recipient, listings[listingId].tokenId);
 
     _distributeValue(listingId);
-
-    emit ListingBought(listingId, recipient);
+    emit ListingBought(
+      listingId,
+      recipient
+    );    
+    emit ListingBoughtFull(
+      listingId,
+      recipient,
+      address(listings[listingId].currency),
+      address(listings[listingId].collection),
+      listings[listingId].seller,
+      listings[listingId].lastBid,
+      listings[listingId].tokenId
+    );
   }
 
   function _distributeValue(uint256 listingId) private {
-    uint256 feePlatformValue = (listings[listingId].lastBid * 1) / 100;
+    bool supportsInterface = ERC165Checker.supportsInterface(address(listings[listingId].collection), type(IERC2981).interfaceId);
+    uint256 remains = listings[listingId].lastBid;
+    if (supportsInterface) {
+      (address recipient, uint256 fee) = IERC2981(address(listings[listingId].collection)).royaltyInfo(listings[listingId].tokenId, listings[listingId].lastBid);
+      _transferCurrency(listingId, recipient, fee);
+      remains -= fee;
+    }
+    uint256 feePlatformValue = (listings[listingId].lastBid * 5) / 100;
     _transferCurrency(listingId, feePlatformAddress, feePlatformValue);
-    _transferCurrency(listingId, listings[listingId].seller, listings[listingId].lastBid - feePlatformValue);
+    _transferCurrency(listingId, listings[listingId].seller, remains - feePlatformValue);
     // _transferCurrency(listingId, listings[listingId].seller, listings[listingId].lastBid);
   }
 
-  function _transferCurrency(
-    uint256 listingId,
-    address account,
-    uint256 amount
-  ) private {
+  function _transferCurrency(uint256 listingId, address account, uint256 amount) private {
     if (amount > 0) {
       if (address(listings[listingId].currency) == address(0)) {
         if (!payable(account).send(amount)) {
